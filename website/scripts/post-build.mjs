@@ -22,7 +22,9 @@ const walk = (dir) => {
     if (statSync(p).isDirectory()) walk(p);
     else if (p.endsWith(".html")) {
       const before = readFileSync(p, "utf8");
-      const after = before.replace(/\/opengraph-image(\?[^"'\s]*)?/g, "/og.png");
+      // Only match a clean URL: /opengraph-image optionally followed by ?<hex/alnum>.
+      // Avoid greedy classes that swallow backslash-escaped quotes inside RSC payloads.
+      const after = before.replace(/\/opengraph-image(?:\?[A-Za-z0-9]+)?/g, "/og.png");
       if (before !== after) {
         writeFileSync(p, after);
         console.log(`post-build: rewrote OG URL in ${p.replace(out, "out")}`);
