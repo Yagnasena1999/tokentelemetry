@@ -130,6 +130,7 @@ export default function Home() {
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Cache Hit card commented out
           <QualityCard
             title="Cache Hit %"
             scope="ALL AGENTS"
@@ -140,6 +141,7 @@ export default function Home() {
             footer="cached / (input + cached) tokens"
             emptyHint="No token data yet"
           />
+          */}
           {/* Quality signals cards commented out (not yet implemented)
           <QualityCard
             title="One-Shot Rate"
