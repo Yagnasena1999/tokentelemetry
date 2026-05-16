@@ -8,6 +8,7 @@ import {
 
 import { useResource } from "@/lib/api";
 import { AGENTS, getAgent, type AgentKey } from "@/lib/agents";
+import SourceBadge from "@/components/SourceBadge";
 import {
   PageHeader, StatTile, Section, Card, CardHeader, CardTitle, CardEyebrow,
   Table, THead, TBody, TR, TH, TD, AgentBadge, Badge, Button, EmptyState, Skeleton,
@@ -22,6 +23,8 @@ interface Session {
   text?: string;
   tokens?: { input: number; output: number; cached: number; total: number };
   cost?: number;
+  /** Hermes-only: cli / telegram / cron / etc. */
+  source_subtype?: string;
 }
 
 interface AnalyticsResponse {
@@ -198,9 +201,13 @@ export default function Home() {
                           <AgentBadge agent={s.agent} />
                         </Link>
                       </TD>
-                      <TD className="font-mono text-[12px] text-[var(--tt-fg-muted)] max-w-[160px] truncate" title={s.project}>
+                      <TD className="font-mono text-[12px] text-[var(--tt-fg-muted)] max-w-[160px] truncate" title={s.agent === "hermes" ? `Hermes source: ${s.source_subtype || "unknown"}` : s.project}>
                         <Link href={`/sessions/${s.id}?agent=${s.agent}`} className="block truncate">
-                          {s.project.split("/").pop()}
+                          {s.agent === "hermes" ? (
+                            <SourceBadge source={s.source_subtype} size="xs" />
+                          ) : (
+                            s.project.split("/").pop()
+                          )}
                         </Link>
                       </TD>
                       <TD className="text-[var(--tt-fg)] max-w-[480px] truncate">

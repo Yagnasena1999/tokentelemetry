@@ -25,7 +25,7 @@ export const FAQ_ITEMS = [
   },
   {
     q: "Which coding agents does it support?",
-    a: "Claude Code (Anthropic), OpenAI Codex CLI, Gemini CLI (Google), Cursor, GitHub Copilot, Qwen CLI, OpenCode, Vibe, and Antigravity — nine agents total.",
+    a: "Claude Code (Anthropic), OpenAI Codex CLI, Gemini CLI (Google), Cursor, GitHub Copilot, Qwen CLI, OpenCode, Hermes Agent (Nous Research), Vibe, and Antigravity — ten agents total.",
   },
 ];
 

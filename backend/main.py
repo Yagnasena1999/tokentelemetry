@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import re
 import json
 import yaml
 import sqlite3
@@ -72,6 +73,9 @@ CURSOR_DIR = HOME / ".cursor"
 OLLAMA_DIR = HOME / ".ollama"
 HF_DIR = HOME / ".cache/huggingface"
 OPENCODE_DB = HOME / ".local/share/opencode/opencode.db"
+HERMES_DIR = HOME / ".hermes"
+HERMES_DB = HERMES_DIR / "state.db"
+HERMES_PROFILES_DIR = HERMES_DIR / "profiles"
 
 # Specialized storage paths
 VSCODE_STORAGE = VSCODE_BASE / "User/workspaceStorage"
@@ -159,6 +163,47 @@ class Session(BaseModel):
 
 # EDIT_TOOLS: Set[str] = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
 
+def _hermes_dbs() -> List[Path]:
+    dbs: List[Path] = []
+    if HERMES_DB.exists():
+        dbs.append(HERMES_DB)
+    if HERMES_PROFILES_DIR.is_dir():
+        for p in HERMES_PROFILES_DIR.glob("*/state.db"):
+            if p.exists():
+                dbs.append(p)
+    return dbs
+
+
+_HERMES_CWD_RE = re.compile(r"\[(\d{8}_\d{6}_[a-f0-9]+)\][^\n]*cwd=([^\s,)]+)")
+
+
+def _hermes_cwd_by_session() -> Dict[str, str]:
+    """Recover per-session cwd from ~/.hermes/logs/agent.log.
+
+    Hermes doesn't persist cwd in its schema (it's a portable agent — no project
+    concept). The cwd surfaces only as a side effect when the `terminal` tool
+    initializes a sandbox. We parse the log line and attribute the *first* cwd
+    seen per session id. Sessions that never invoked the terminal stay 'unknown'.
+    Fidelity: inferred.
+    """
+    log_path = HERMES_DIR / "logs" / "agent.log"
+    if not log_path.exists():
+        return {}
+    out: Dict[str, str] = {}
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                m = _HERMES_CWD_RE.search(line)
+                if not m:
+                    continue
+                sid, cwd = m.group(1), m.group(2)
+                if sid not in out:  # first wins
+                    out[sid] = cwd
+    except Exception:
+        return out
+    return out
+
+
 @app.get("/")
 async def root():
     return {"message": "TokenTelemetry API is running"}
@@ -177,6 +222,7 @@ async def get_available_agents():
     if CURSOR_DIR.exists(): agents.append("cursor")
     if VSCODE_STORAGE.exists(): agents.append("copilot")
     if OPENCODE_DB.exists(): agents.append("opencode")
+    if _hermes_dbs(): agents.append("hermes")
     # if OLLAMA_DIR.exists(): agents.append("ollama")
     return agents
 
@@ -852,6 +898,67 @@ def _scan_sessions_sync():
         except Exception:
             pass
 
+    # 9. Hermes Agent (SQLite: sessions / messages, pre-aggregated tokens)
+    hermes_cwd_map = _hermes_cwd_by_session() if _hermes_dbs() else {}
+    for db_path in _hermes_dbs():
+        try:
+            uri = f"file:{db_path}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True, timeout=1.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                srows = conn.execute(
+                    "SELECT id, source, model, parent_session_id, started_at, ended_at, "
+                    "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
+                    "reasoning_tokens, estimated_cost_usd, actual_cost_usd, title, "
+                    "billing_provider "
+                    "FROM sessions"
+                ).fetchall()
+                for srow in srows:
+                    sid = srow["id"]
+                    ts_unix = srow["ended_at"] or srow["started_at"] or 0
+                    ts = datetime.fromtimestamp(ts_unix, tz=timezone.utc)
+                    in_t  = srow["input_tokens"] or 0
+                    out_t = srow["output_tokens"] or 0
+                    reas  = srow["reasoning_tokens"] or 0
+                    cached = (srow["cache_read_tokens"] or 0) + (srow["cache_write_tokens"] or 0)
+                    out_t += reas  # fold reasoning into output, matching Claude convention
+                    tokens = {"input": in_t, "output": out_t, "cached": cached,
+                              "total": in_t + out_t + cached}
+                    model = srow["model"]
+                    # Prefer Hermes's own cost (it knows exotic models we may not price)
+                    cost = srow["actual_cost_usd"] if srow["actual_cost_usd"] is not None else srow["estimated_cost_usd"]
+                    if cost is None:
+                        cost = calculate_cost(model, in_t, out_t, cached, provider=srow["billing_provider"])
+                    tokens["cost"] = cost
+                    # First user message → display fallback when title is empty
+                    first_user = ""
+                    fu = conn.execute(
+                        "SELECT content FROM messages WHERE session_id=? AND role='user' "
+                        "AND content IS NOT NULL AND content != '' "
+                        "ORDER BY timestamp LIMIT 1", (sid,)).fetchone()
+                    if fu:
+                        first_user = fu["content"] or ""
+                    display = (srow["title"] or first_user)[:100]
+                    # Distinct tool names used in this session
+                    mcp_tools = [r[0] for r in conn.execute(
+                        "SELECT DISTINCT tool_name FROM messages "
+                        "WHERE session_id=? AND tool_name IS NOT NULL AND tool_name != ''",
+                        (sid,)).fetchall()]
+                    cwd = hermes_cwd_map.get(sid)
+                    sessions.append({
+                        "id": sid, "agent": "hermes",
+                        "project": apply_alias(cwd or "unknown"),
+                        "project_inferred": cwd is not None,
+                        "timestamp": ts, "display": display, "tokens": tokens,
+                        "mcp_tools": mcp_tools, "has_plan": False, "plans": [],
+                        "model": model, "artifacts": [], "cost": cost,
+                        "source_subtype": srow["source"],
+                    })
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
     # Global sort by timestamp descending
     sessions.sort(key=lambda x: x["timestamp"], reverse=True)
     return sessions
@@ -1229,6 +1336,60 @@ async def get_session_detail(session_id: str, agent: str):
             return events
         finally:
             conn.close()
+    elif agent == "hermes":
+        for db_path in _hermes_dbs():
+            try:
+                uri = f"file:{db_path}?mode=ro"
+                conn = sqlite3.connect(uri, uri=True, timeout=1.0)
+                conn.row_factory = sqlite3.Row
+                try:
+                    srow = conn.execute("SELECT id FROM sessions WHERE id=?", (session_id,)).fetchone()
+                    if not srow:
+                        continue
+                    events: List[Dict[str, Any]] = []
+                    for mrow in conn.execute(
+                        "SELECT role, content, tool_calls, tool_name, timestamp, "
+                        "reasoning_content FROM messages WHERE session_id=? ORDER BY timestamp",
+                        (session_id,)
+                    ):
+                        ts_ms = int((mrow["timestamp"] or 0) * 1000)
+                        base = {"timestamp": ts_ms, "normalized_timestamp": ts_ms}
+                        role = mrow["role"]
+                        content = mrow["content"] or ""
+                        if role == "user" and content:
+                            events.append({"type": "user", "payload": {"content": content}, **base})
+                        elif role == "assistant":
+                            reasoning = mrow["reasoning_content"] or ""
+                            if reasoning:
+                                events.append({"type": "assistant_thinking", "payload": {"text": reasoning}, **base})
+                            if content:
+                                events.append({"type": "assistant", "payload": {"content": content}, **base})
+                            tcs_raw = mrow["tool_calls"]
+                            if tcs_raw:
+                                try:
+                                    tcs = json.loads(tcs_raw)
+                                except: tcs = []
+                                if isinstance(tcs, list):
+                                    for tc in tcs:
+                                        if not isinstance(tc, dict): continue
+                                        fn = tc.get("function") or {}
+                                        events.append({"type": "tool_call", "payload": {
+                                            "tool": tc.get("name") or fn.get("name") or mrow["tool_name"],
+                                            "callID": tc.get("call_id") or tc.get("id"),
+                                            "state": "completed",
+                                        }, **base})
+                        elif role == "tool":
+                            # Hermes records tool results as role='tool'; surface as a separate event
+                            events.append({"type": "tool_result", "payload": {
+                                "tool": mrow["tool_name"],
+                                "content": content,
+                            }, **base})
+                    return events
+                finally:
+                    conn.close()
+            except Exception:
+                continue
+        return {"error": "Not found"}
     # elif agent == "ollama":
     #     if (OLLAMA_DIR / "history").exists():
     #         with open(OLLAMA_DIR / "history", "r") as f:

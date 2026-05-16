@@ -8,6 +8,7 @@ import { ArrowLeft, Brain, Code, MessageSquare, Terminal, User, FileText, Activi
 import Link from "next/link";
 import { format } from "date-fns";
 import { AgentBadge, Badge, Button, Skeleton } from "@/components/ui";
+import SourceBadge from "@/components/SourceBadge";
 
 interface Artifact {
   name: string;
@@ -29,6 +30,8 @@ interface Session {
   model?: string;
   tokens?: { input: number; output: number; cached: number; total: number };
   artifacts?: Artifact[];
+  /** Hermes-only */
+  source_subtype?: string;
 }
 
 interface Event {
@@ -438,6 +441,7 @@ export default function SessionDetailPage() {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {agent && <AgentBadge agent={agent} />}
+                  {agent === "hermes" && <SourceBadge source={sessionInfo?.source_subtype} size="sm" />}
                   <button
                     onClick={() => navigator.clipboard?.writeText(id)}
                     title="Copy session id"
@@ -1156,7 +1160,7 @@ function EventCard({ event, mode = "all", agent }: { event: any, mode?: "dialogu
         <div className={`absolute top-0 left-0 w-1 h-full ${accent}`}></div>
         <div className="flex justify-between items-start mb-4">
           <div className={`flex items-center gap-2 ${textColor} font-black text-[10px] uppercase tracking-[0.2em]`}>
-              <Zap size={16} strokeWidth={3} /> Thinking
+              <Zap size={16} strokeWidth={3} /> Response
           </div>
           {renderTimestamp()}
         </div>
