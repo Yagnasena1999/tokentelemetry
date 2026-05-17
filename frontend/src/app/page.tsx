@@ -8,6 +8,8 @@ import {
 
 import { useResource } from "@/lib/api";
 import { AGENTS, getAgent, type AgentKey } from "@/lib/agents";
+import SourceBadge from "@/components/SourceBadge";
+import { formatTokens, formatCost } from "@/lib/format";
 import {
   PageHeader, StatTile, Section, Card, CardHeader, CardTitle, CardEyebrow,
   Table, THead, TBody, TR, TH, TD, AgentBadge, Badge, Button, EmptyState, Skeleton,
@@ -22,6 +24,8 @@ interface Session {
   text?: string;
   tokens?: { input: number; output: number; cached: number; total: number };
   cost?: number;
+  /** Hermes-only: cli / telegram / cron / etc. */
+  source_subtype?: string;
 }
 
 interface AnalyticsResponse {
@@ -115,46 +119,74 @@ export default function Home() {
         </div>
       </Section>
 
-      {/* Connected agents */}
-      {availableAgents.length > 0 && (
-        <Section
-          title="Connected agents"
-          description="Detected from local agent runtimes — counts reflect sessions captured."
-        >
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-            {availableAgents.map((k) => {
-              const meta = AGENTS[k as AgentKey];
-              if (!meta) return null;
-              const count = sessions.filter((s) => s.agent === k).length;
-              const Icon = meta.icon;
-              return (
+      {/* Connected agents — split into coding vs autonomous */}
+      {availableAgents.length > 0 && (() => {
+        const AUTONOMOUS = new Set(["hermes"]);
+        const coding = availableAgents.filter((k) => !AUTONOMOUS.has(k));
+        const autonomous = availableAgents.filter((k) => AUTONOMOUS.has(k));
+        const renderCard = (k: string) => {
+          const meta = AGENTS[k as AgentKey];
+          if (!meta) return null;
+          const count = sessions.filter((s) => s.agent === k).length;
+          const Icon = meta.icon;
+          const inner = (
+            <>
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 -top-px h-px"
+                style={{ background: `linear-gradient(90deg, transparent, ${meta.hex}66, transparent)` }}
+              />
+              <div className="flex items-center justify-between">
                 <div
-                  key={k}
-                  className="group relative overflow-hidden rounded-[var(--tt-radius-lg)] border border-[var(--tt-border)] bg-[var(--tt-panel)] p-3 transition-colors hover:border-[var(--tt-border-strong)]"
+                  className="h-7 w-7 grid place-items-center rounded-md"
+                  style={{ backgroundColor: `${meta.hex}14`, color: meta.hex }}
                 >
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-x-0 -top-px h-px"
-                    style={{ background: `linear-gradient(90deg, transparent, ${meta.hex}66, transparent)` }}
-                  />
-                  <div className="flex items-center justify-between">
-                    <div
-                      className="h-7 w-7 grid place-items-center rounded-md"
-                      style={{ backgroundColor: `${meta.hex}14`, color: meta.hex }}
-                    >
-                      <Icon size={14} />
-                    </div>
-                    <span className="tabular text-[13px] font-semibold text-[var(--tt-fg)]">{count}</span>
-                  </div>
-                  <div className="mt-2 text-[11px] uppercase tracking-[0.16em] text-[var(--tt-fg-muted)]">
-                    {meta.label}
-                  </div>
+                  <Icon size={14} />
                 </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
+                <span className="tabular text-[13px] font-semibold text-[var(--tt-fg)]">{count}</span>
+              </div>
+              <div className="mt-2 text-[11px] uppercase tracking-[0.16em] text-[var(--tt-fg-muted)]">
+                {meta.label}
+              </div>
+            </>
+          );
+          const className =
+            "group relative overflow-hidden rounded-[var(--tt-radius-lg)] border border-[var(--tt-border)] bg-[var(--tt-panel)] p-3 transition-colors hover:border-[var(--tt-border-strong)]";
+          // Hermes routes to its dedicated page; other agents stay non-interactive for now.
+          if (k === "hermes") {
+            return (
+              <Link key={k} href="/hermes" className={`${className} cursor-pointer hover:bg-[var(--tt-sunken)]`}>
+                {inner}
+              </Link>
+            );
+          }
+          return <div key={k} className={className}>{inner}</div>;
+        };
+        return (
+          <>
+            {coding.length > 0 && (
+              <Section
+                title="Connected coding agents"
+                description="Detected from local agent runtimes — counts reflect sessions captured."
+              >
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+                  {coding.map(renderCard)}
+                </div>
+              </Section>
+            )}
+            {autonomous.length > 0 && (
+              <Section
+                title="Connected autonomous agents"
+                description="General-purpose agents that run across CLI, messaging, and scheduled jobs."
+              >
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+                  {autonomous.map(renderCard)}
+                </div>
+              </Section>
+            )}
+          </>
+        );
+      })()}
 
       {/* Activity + sidebars */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
@@ -198,9 +230,13 @@ export default function Home() {
                           <AgentBadge agent={s.agent} />
                         </Link>
                       </TD>
-                      <TD className="font-mono text-[12px] text-[var(--tt-fg-muted)] max-w-[160px] truncate" title={s.project}>
+                      <TD className="font-mono text-[12px] text-[var(--tt-fg-muted)] max-w-[160px] truncate" title={s.agent === "hermes" ? `Hermes source: ${s.source_subtype || "unknown"}` : s.project}>
                         <Link href={`/sessions/${s.id}?agent=${s.agent}`} className="block truncate">
-                          {s.project.split("/").pop()}
+                          {s.agent === "hermes" ? (
+                            <SourceBadge source={s.source_subtype} size="xs" />
+                          ) : (
+                            s.project.split("/").pop()
+                          )}
                         </Link>
                       </TD>
                       <TD className="text-[var(--tt-fg)] max-w-[480px] truncate">
@@ -330,14 +366,4 @@ function ActivityLoading() {
   );
 }
 
-function formatTokens(n: number) {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toLocaleString();
-}
-
-function formatCost(n: number) {
-  if (n === 0) return "$0.00";
-  if (n < 0.01) return "<$0.01";
-  return `$${n.toFixed(2)}`;
-}
+// formatters live in @/lib/format — imported at the top of this file.

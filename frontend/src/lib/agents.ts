@@ -2,10 +2,11 @@ import {
   Terminal, Database, Sparkles, Orbit, Cpu, Zap, MousePointer2,
   GitBranch, Code2, type LucideIcon,
 } from "lucide-react";
+import HermesIcon from "@/components/icons/HermesIcon";
 
 export type AgentKey =
   | "claude" | "codex" | "gemini" | "antigravity"
-  | "qwen" | "vibe" | "cursor" | "copilot" | "opencode";
+  | "qwen" | "vibe" | "cursor" | "copilot" | "opencode" | "hermes";
 
 export interface AgentMeta {
   key: AgentKey;
@@ -25,6 +26,7 @@ export const AGENTS: Record<AgentKey, AgentMeta> = {
   cursor:      { key: "cursor",      label: "Cursor",      hex: "#60a5fa", icon: MousePointer2 },
   copilot:     { key: "copilot",     label: "Copilot",     hex: "#6366f1", icon: GitBranch },
   opencode:    { key: "opencode",    label: "OpenCode",    hex: "#f59e0b", icon: Code2 },
+  hermes:      { key: "hermes",      label: "Hermes Agent", hex: "#eab308", icon: HermesIcon },
 };
 
 const FALLBACK: AgentMeta = {
