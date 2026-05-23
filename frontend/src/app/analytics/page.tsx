@@ -333,14 +333,15 @@ export default function AnalyticsPage() {
               </div>
             </Card>
 
-            <Card padding="lg">
+            <Card padding="lg" className="flex flex-col min-h-0">
               <CardHeader>
                 <CardTitle><Cpu size={14} className="text-emerald-400" /> Model share</CardTitle>
+                <CardEyebrow>{modelData.length} models</CardEyebrow>
               </CardHeader>
-              <div className="h-56">
+              <div className="h-44 shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <RePieChart>
-                    <Pie data={modelData} innerRadius={48} outerRadius={76} paddingAngle={2} dataKey="total" stroke="none">
+                    <Pie data={modelData} innerRadius={40} outerRadius={64} paddingAngle={2} dataKey="total" stroke="none">
                       {modelData.map((m) => <Cell key={m.name} fill={m.color} />)}
                     </Pie>
                     <Tooltip
@@ -351,7 +352,7 @@ export default function AnalyticsPage() {
                   </RePieChart>
                 </ResponsiveContainer>
               </div>
-              <ul className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
+              <ul className="mt-2 space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1">
                 {modelData.map((m) => (
                   <li key={m.name} className="flex items-center justify-between gap-2 text-[11px]">
                     <span className="flex items-center gap-2 min-w-0">
