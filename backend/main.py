@@ -1954,10 +1954,11 @@ async def post_aliases(aliases: Dict[str, str]):
 
 
 def _cache_hit_pct(input_tokens: int, cached_tokens: int) -> Optional[float]:
+    """Return cache hit ratio as 0-100, matching the Hermes overlay's scale."""
     denom = input_tokens + cached_tokens
     if denom <= 0:
         return None
-    return cached_tokens / denom
+    return round((cached_tokens / denom) * 100, 1)
 
 
 @app.get("/analytics")
