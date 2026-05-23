@@ -1075,7 +1075,8 @@ def _scan_sessions_sync():
                     mcp_tools = [t.get("function", {}).get("name") for t in meta.get("tools_available", []) if t.get("function", {}).get("name")]
                     model = meta.get("agent_config", {}).get("active_model")
                     project_path = apply_alias(meta.get("environment", {}).get("working_directory", "unknown"))
-                    sessions.append({"id": sid, "agent": "vibe", "project": project_path, "timestamp": ts, "display": f"Vibe Session {sid[:8]}", "tokens": tokens, "mcp_tools": list(set(mcp_tools)), "has_plan": False, "plans": [], "model": model, "artifacts": []})
+                    tokens["cost"] = calculate_cost(model, tokens["input"], tokens["output"], tokens["cached"])
+                    sessions.append({"id": sid, "agent": "vibe", "project": project_path, "timestamp": ts, "display": f"Vibe Session {sid[:8]}", "tokens": tokens, "mcp_tools": list(set(mcp_tools)), "has_plan": False, "plans": [], "model": model, "artifacts": [], "cost": tokens["cost"]})
             except: continue
 
     # 6. Cursor
