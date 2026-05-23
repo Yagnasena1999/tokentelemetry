@@ -1165,21 +1165,25 @@ def _scan_sessions_sync():
                             last_ts = datetime.fromtimestamp(creation_ts / 1000, tz=timezone.utc) if isinstance(creation_ts, (int, float)) else _now()
                             
                             for req in data.get("requests", []):
-                                if not first_msg: first_msg = req.get("message", {}).get("text", "")
+                                msg_text = req.get("message", {}).get("text", "") or ""
+                                if not first_msg: first_msg = msg_text
                                 if req.get("modelId") and not model:
                                     model = req.get("modelId").split("/")[-1]
                                 if req.get("timestamp"):
                                     ts_val = req.get("timestamp")
-                                    if isinstance(ts_val, (int, float)): 
+                                    if isinstance(ts_val, (int, float)):
                                         req_ts = datetime.fromtimestamp(ts_val / 1000, tz=timezone.utc)
                                         if req_ts > last_ts: last_ts = req_ts
+                                # Copilot doesn't record input tokens; estimate from prompt chars (~4 chars/token).
+                                tokens["input"] += len(msg_text) // 4
                                 if "thinking" in req:
-                                    tokens["total"] += req["thinking"].get("tokens", 0)
+                                    tokens["output"] += req["thinking"].get("tokens", 0) or 0
                                     t_text = req["thinking"].get("text", "")
                                     if "plan" in t_text.lower() and len(t_text) > 100:
                                         plans.append({"session_id": sid, "agent": "copilot", "timestamp": last_ts, "content": t_text})
                                 if "response" in req:
-                                    for part in req["response"]: tokens["total"] += part.get("tokens", 0)
+                                    for part in req["response"]: tokens["output"] += part.get("tokens", 0) or 0
+                            tokens["total"] = tokens["input"] + tokens["output"] + tokens["cached"]
                             tokens["cost"] = calculate_cost(model, tokens["input"], tokens["output"], tokens["cached"])
                             sessions.append({"id": sid, "agent": "copilot", "project": project_path, "timestamp": last_ts, "display": first_msg[:100], "tokens": tokens, "mcp_tools": [], "has_plan": len(plans) > 0, "plans": plans, "model": model, "artifacts": [], "cost": tokens["cost"]})
                     except: continue
