@@ -1981,7 +1981,9 @@ async def get_analytics():
         for k in ["input", "output", "cached", "total"]: by_model[model_name][k] += st.get(k, 0)
         by_model[model_name]["cost"] += scost
         by_model[model_name]["session_count"] += 1
-        day = s["timestamp"].strftime("%Y-%m-%d")
+        # Bucket by LOCAL day, not UTC — a 9pm-PT session shouldn't land on the
+        # next day just because the timestamp crossed midnight UTC.
+        day = s["timestamp"].astimezone().strftime("%Y-%m-%d")
         if day not in by_day: by_day[day] = {"total": 0, "input": 0, "output": 0, "cached": 0, "cost": 0.0}
         for k in ["input", "output", "cached", "total"]: by_day[day][k] += st.get(k, 0)
         by_day[day]["cost"] += scost
