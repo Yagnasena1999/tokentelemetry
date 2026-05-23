@@ -673,7 +673,10 @@ def _scan_sessions_sync():
                                 usage = msg.get("usage", {})
                                 if usage:
                                     cr = usage.get("cache_read_input_tokens", 0) or 0
-                                    sess["tokens"]["input"]  += usage.get("input_tokens", 0) or 0
+                                    cc = usage.get("cache_creation_input_tokens", 0) or 0
+                                    # cache_creation is billed at ~1.25x input rate; fold into input
+                                    # as the closest approximation under calculate_cost's single-param API.
+                                    sess["tokens"]["input"]  += (usage.get("input_tokens", 0) or 0) + cc
                                     sess["tokens"]["output"] += usage.get("output_tokens", 0) or 0
                                     # cached = unique cached-prefix size (high-water-mark), NOT per-turn sum
                                     sess["tokens"]["cached"] = max(sess["tokens"]["cached"], cr)
@@ -1044,7 +1047,8 @@ def _scan_sessions_sync():
                                             model = data["message"]["model"]
                                         usage = data.get("message", {}).get("usage", {})
                                         cr = usage.get("cache_read_input_tokens", 0) or 0
-                                        tokens["input"]  += usage.get("input_tokens", 0) or 0
+                                        cc = usage.get("cache_creation_input_tokens", 0) or 0
+                                        tokens["input"]  += (usage.get("input_tokens", 0) or 0) + cc
                                         tokens["output"] += usage.get("output_tokens", 0) or 0
                                         tokens["cached"] = max(tokens["cached"], cr)
                                         tokens["_cached_sum"] = tokens.get("_cached_sum", 0) + cr
@@ -1145,7 +1149,8 @@ def _scan_sessions_sync():
                                             if msg.get("model") and not model: model = msg.get("model")
                                             usage = msg.get("usage", {}) if isinstance(msg.get("usage"), dict) else {}
                                             cr = usage.get("cache_read_input_tokens", 0) or 0
-                                            tokens["input"]  += usage.get("input_tokens", 0) or 0
+                                            cc = usage.get("cache_creation_input_tokens", 0) or 0
+                                            tokens["input"]  += (usage.get("input_tokens", 0) or 0) + cc
                                             tokens["output"] += usage.get("output_tokens", 0) or 0
                                             tokens["cached"] = max(tokens["cached"], cr)
                                             tokens["_cached_sum"] = tokens.get("_cached_sum", 0) + cr
